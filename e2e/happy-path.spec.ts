@@ -20,6 +20,8 @@ interface Recorded {
 interface MockOptions {
   mrs?: Uint8Array | null;
   txt?: string | null;
+  /** 让某些请求变慢，用来复现「读取期间用户已经输入」的竞态。key 形如 `GET /repos/.../contents/rule/pt.txt` */
+  delays?: Record<string, number>;
 }
 
 async function mockGitHub(page: Page, options: MockOptions): Promise<{ requests: Recorded[] }> {
@@ -35,12 +37,15 @@ async function mockGitHub(page: Page, options: MockOptions): Promise<{ requests:
     if (raw !== null && raw !== '') body = JSON.parse(raw) as Record<string, unknown>;
     requests.push({ method, path, body });
 
+    const key = `${method} ${path}`;
+    const delay = options.delays?.[key];
+    if (delay !== undefined) await new Promise((resolve) => setTimeout(resolve, delay));
+
     const json = (data: unknown, status = 200) =>
       route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) });
     const bytes = (data: Uint8Array) =>
       route.fulfill({ status: 200, contentType: 'application/octet-stream', body: Buffer.from(data) });
 
-    const key = `${method} ${path}`;
     switch (true) {
       case key === 'GET /user':
         return json({ login: 'tester' });
@@ -83,13 +88,22 @@ async function existingMrs(entries: string[], behavior: RuleBehavior): Promise<U
   return nodeZstd.compress(buildMrsPayload(entries, behavior));
 }
 
+/**
+ * 点「连接并读取」并**等到读取真正结束**：只等按钮状态会漏掉「请求还没回来」的窗口，
+ * 而那正是历史 bug 的来源——读取结果回来时会把用户在读取期间输入的内容覆盖掉。
+ */
+async function connectAndWait(page: Page): Promise<void> {
+  await page.getByRole('button', { name: '连接并读取' }).click();
+  await expect(page.getByText(/已连接 tester · tester\/rules/)).toBeVisible();
+}
+
 test('把新域名加进已有 .mrs 并提交，提交内容可解回新列表', async ({ page }) => {
   const mrs = await existingMrs(['example.com', '+.old-domain.com'], 'domain');
   const { requests } = await mockGitHub(page, { mrs, txt: null });
 
-  await page.goto('/');
+  await page.goto('./');
   await fillConnection(page);
-  await page.getByRole('button', { name: '连接并读取' }).click();
+  await connectAndWait(page);
 
   // 已有 .mrs 被解码进编辑器
   const editor = page.getByLabel('规则条目');
@@ -138,9 +152,9 @@ test('把新域名加进已有 .mrs 并提交，提交内容可解回新列表',
 test('浏览器里真实生成 .mrs 并下载，解回来是同一份列表', async ({ page }) => {
   await mockGitHub(page, { mrs: null, txt: null });
 
-  await page.goto('/');
+  await page.goto('./');
   await fillConnection(page);
-  await page.getByRole('button', { name: '连接并读取' }).click();
+  await connectAndWait(page);
   await expect(page.getByText('来源：空白新建', { exact: true })).toBeVisible();
 
   await page.getByLabel('规则条目').fill('+.tracker-a.net\n10.0.0.0/8\n');
@@ -171,9 +185,9 @@ test('浏览器里真实生成 .mrs 并下载，解回来是同一份列表', as
 test('非法条目会被拦下，不会发出任何写请求', async ({ page }) => {
   const { requests } = await mockGitHub(page, { mrs: null, txt: null });
 
-  await page.goto('/');
+  await page.goto('./');
   await fillConnection(page);
-  await page.getByRole('button', { name: '连接并读取' }).click();
+  await connectAndWait(page);
 
   await page.getByLabel('规则条目').fill('good-domain.com\nbad..domain\n1.2.3.4/33\n');
   await expect(page.getByText(/有 2 条无法解析/)).toBeVisible();
@@ -181,4 +195,29 @@ test('非法条目会被拦下，不会发出任何写请求', async ({ page }) 
 
   await page.getByRole('button', { name: '提交到 GitHub' }).click({ force: true }).catch(() => undefined);
   expect(requests.filter((item) => item.method !== 'GET')).toHaveLength(0);
+});
+
+test('读取还没回来时就开始输入，内容不会被加载结果覆盖（竞态回归）', async ({ page }) => {
+  // 让仓库读取慢 1.5 秒，制造「请求在飞、用户已经在打字」的窗口
+  await mockGitHub(page, {
+    mrs: null,
+    txt: '+.repo-original.example\n',
+    delays: { 'GET /repos/tester/rules/contents/rule/pt.txt': 1500 },
+  });
+
+  await page.goto('./');
+  await fillConnection(page);
+  await page.getByRole('button', { name: '连接并读取' }).click();
+
+  // 读取期间立刻输入
+  const editor = page.getByLabel('规则条目');
+  await editor.fill('+.typed-while-loading.example\n');
+
+  await expect(page.getByText(/已连接 tester · tester\/rules/)).toBeVisible();
+  // 用户输入必须被保留，仓库里的内容只作为 diff 基准
+  await expect(editor).toHaveValue(/typed-while-loading\.example/);
+  await expect(editor).not.toHaveValue(/repo-original/);
+  await expect(page.getByText(/为了不丢失输入/)).toBeVisible();
+  // 以仓库里的内容为基准：用户输入的这条算新增，仓库那条算删除
+  await expect(page.getByText('新增 1 · 删除 1 · 未变 0')).toBeVisible();
 });

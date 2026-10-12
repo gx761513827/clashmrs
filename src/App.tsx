@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   defaultCommitMessage,
   loadRuleset,
@@ -60,6 +60,12 @@ export default function App() {
   const [addError, setAddError] = useState<string | null>(null);
   const [detachedIps, setDetachedIps] = useState<string[]>([]);
 
+  // 读取仓库是异步的：如果用户在这期间已经开始输入，绝不能被回来的结果覆盖
+  const textRef = useRef(text);
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
+
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
@@ -119,6 +125,7 @@ export default function App() {
       return;
     }
     setBusy('读取中…');
+    const textAtStart = textRef.current;
     try {
       const client = new GitHubClient({ token });
       const user = await client.getUser();
@@ -126,11 +133,21 @@ export default function App() {
       setRepoInfo(info);
 
       const data = await loadRuleset(client, ref, workerZstd);
-      setText(data.text);
+      // 用户在读取期间改过编辑框 → 保留他的内容，只更新 diff 基准与元信息
+      const editedWhileLoading = textRef.current !== textAtStart;
+      if (editedWhileLoading) {
+        setWarnings([
+          ...data.warnings,
+          '读取完成时编辑框已经被你改过，为了不丢失输入，这里保留了你的内容；变更预览以仓库里的版本为基准。' +
+            '如果想把仓库版本加载回来，再点一次「连接并读取」。',
+        ]);
+      } else {
+        setText(data.text);
+        setWarnings(data.warnings);
+      }
       setOriginalEntries(data.originalEntries);
       setLoadedSource(data.source);
       setLoadedCount(data.count);
-      setWarnings(data.warnings);
       setBehaviorChoice('auto');
       setMessage('');
       setMessageTouched(false);
