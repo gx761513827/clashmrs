@@ -8,7 +8,6 @@ on:
 permissions:
   contents: read
   pages: write
-  pages: read
   id-token: write
 
 concurrency:
@@ -19,11 +18,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     outputs:
-      pages-enabled: ${{ steps.pages-check.outputs.enabled }}
+      pages_enabled: ${{ steps.pages_check.outputs.enabled }}
     steps:
       # 没启用 Pages 时（GET /pages 返回 404）直接跳过，避免每次 push 都留下一个红色的失败记录
       - name: 检查 Pages 是否已启用
-        id: pages-check
+        id: pages_check
         run: |
           status=$(curl -s -o /dev/null -w '%{http_code}' \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
@@ -31,42 +30,42 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/pages") || status=000
           if [ "$status" = "404" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::GitHub Pages 尚未启用，跳过部署。请在 Settings → Pages → Source 选择 \"GitHub Actions\"。"
+            echo "::notice::GitHub Pages 尚未启用，跳过部署。请在 Settings → Pages → Source 选择 GitHub Actions。"
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@v4
-        if: steps.pages-check.outputs.enabled == 'true'
+        if: steps.pages_check.outputs.enabled == 'true'
 
       - uses: pnpm/action-setup@v4
-        if: steps.pages-check.outputs.enabled == 'true'
+        if: steps.pages_check.outputs.enabled == 'true'
         with:
           version: 10
 
       - uses: actions/setup-node@v4
-        if: steps.pages-check.outputs.enabled == 'true'
+        if: steps.pages_check.outputs.enabled == 'true'
         with:
           node-version: 22
           cache: pnpm
 
       - name: 安装依赖
-        if: steps.pages-check.outputs.enabled == 'true'
+        if: steps.pages_check.outputs.enabled == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: 构建
-        if: steps.pages-check.outputs.enabled == 'true'
+        if: steps.pages_check.outputs.enabled == 'true'
         # base 已经是 './'，放在仓库子路径也能正常加载资源
         run: pnpm build
 
       - uses: actions/upload-pages-artifact@v3
-        if: steps.pages-check.outputs.enabled == 'true'
+        if: steps.pages_check.outputs.enabled == 'true'
         with:
           path: dist
 
   deploy:
     needs: build
-    if: needs.build.outputs.pages-enabled == 'true'
+    if: needs.build.outputs.pages_enabled == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
