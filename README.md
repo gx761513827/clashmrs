@@ -11,6 +11,8 @@
 
 ## 快速开始
 
+**在线使用**：<https://gx761513827.github.io/clashmrs/>（本仓库已用 GitHub Pages 部署，纯静态、无后端）
+
 ```bash
 pnpm install
 pnpm dev          # http://127.0.0.1:5173
@@ -18,7 +20,8 @@ pnpm build        # 产出 dist/（可直接丢到 GitHub Pages / Cloudflare Pag
 pnpm preview      # 本地预览构建产物：http://127.0.0.1:4173
 ```
 
-部署到 GitHub Pages：仓库自带的 `.github/workflows/pages.yml` 会在 push 后自动构建并发布（`base` 已设为 `'./'`，放在子路径也能用）。
+部署到 GitHub Pages：仓库自带的 `.github/workflows/pages.yml` 会在 push 后自动构建并发布（`base` 已设为 `'./'`，放在子路径也能用）；
+首次需要在 **Settings → Pages → Source** 选择 **GitHub Actions**，未启用时该工作流会自动跳过而不是失败。
 
 ## 三步用法
 
@@ -143,11 +146,16 @@ pnpm verify:mihomo     # 下载官方 mihomo release 到 tools/，然后：
 
 ### 端到端（真浏览器，只有 GitHub API 被 mock）
 
-`e2e/happy-path.spec.ts` 在真实 Chromium 里跑三条链路：
+`e2e/happy-path.spec.ts` 在真实 Chromium 里跑四条链路：
 
 1. 连接 → **解码仓库里已有的 `.mrs`** → 快速添加一条 URL → 提交 → 把提交上去的 blob 解回来核对条目；
 2. 空白新建 → 点「下载 .mrs」→ 真实下载文件 → 解回来核对（证明浏览器 wasm 编码可用）；
-3. 塞入非法条目 → 断言提交按钮禁用**且一条写请求都没发出**；同时断言 token 不出现在页面文本或 URL 里。
+3. 塞入非法条目 → 断言提交按钮禁用**且一条写请求都没发出**；同时断言 token 不出现在页面文本或 URL 里；
+4. **读取竞态回归**：把仓库读取故意延迟 1.5 秒，在读取期间就往编辑框里输入 → 断言输入不被加载结果覆盖，
+   仓库内容只作为 diff 基准，并出现「为了不丢失输入」的提示（真实 bug，见下）。
+
+> 第 4 条来自一次真实事故：`connect()` 的异步结果返回时会 `setText(加载结果)`，
+> 把用户在读取期间输入的内容清空；线上构建响应快所以掩盖了这个 bug，本地 dev server 慢才暴露出来。
 
 ## 常用命令
 
@@ -155,13 +163,27 @@ pnpm verify:mihomo     # 下载官方 mihomo release 到 tools/，然后：
 pnpm dev            # 开发服务器
 pnpm build          # 类型检查 + 构建
 pnpm preview        # 预览构建产物
-pnpm test           # 单元 / 集成 / 字节级回归
+pnpm test           # 单元 / 集成 / 字节级回归 / 工作流校验
 pnpm typecheck      # 只做类型检查
 pnpm fixtures       # 下载官方 .mrs fixture
 pnpm e2e            # Playwright 端到端（dev server）
 pnpm verify:mihomo  # 官方 mihomo 二进制交叉验证
-# 验证构建产物本身：
-$env:E2E_SERVER="preview"; pnpm build; pnpm e2e      # PowerShell
+```
+
+三种 E2E 目标（都不需要改代码）：
+
+```bash
+# 1) 本地 dev server（默认）
+pnpm e2e
+
+# 2) 本地构建产物本身
+$env:E2E_SERVER="preview"; pnpm build; pnpm e2e            # PowerShell
+
+# 3) 线上部署（例如 GitHub Pages）——直连打真实站点，同样 4 条用例
+$env:E2E_BASE_URL="https://gx761513827.github.io/clashmrs/"; pnpm e2e
+
+# 网络环境需要显式指定代理时（例如 Clash fake-ip）
+$env:E2E_PROXY="http://127.0.0.1:7890"; pnpm e2e
 ```
 
 ## 目录结构
