@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 类型检查
+        run: pnpm typecheck
+
+      - name: 下载官方 .mrs fixture（字节级回归的 ground truth）
+        run: pnpm fixtures
+
+      - name: 单元与集成测试
+        run: pnpm test
+
+      - name: 构建
+        run: pnpm build
+
+      - name: 安装 Playwright 浏览器
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: 端到端测试（dev server）
+        run: pnpm e2e

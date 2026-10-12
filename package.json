@@ -1,0 +1,35 @@
+{
+  "name": "clashmrs",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "网页端 mihomo/openclash .mrs 规则集更新器：添加域名或 IP，自动生成 .mrs 并一次性提交到 GitHub",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "fixtures": "node scripts/fetch-fixtures.mjs",
+    "e2e": "playwright test",
+    "verify:mihomo": "node scripts/verify-with-mihomo.mjs"
+  },
+  "dependencies": {
+    "@bokuweb/zstd-wasm": "^0.0.27",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
+  }
+}

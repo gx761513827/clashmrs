@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.pnpm-store/
+.pnpm-cache/
+tests/fixtures/
+tools/
+.tmp/
+playwright-report/
+test-results/
+*.local
+*.log
+.DS_Store
